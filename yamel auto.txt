@@ -1,0 +1,68 @@
+To make this fully automatic, you need to set up a Local LiteLLM Proxy that handles the "intelligence" of picking the best model.
+
+Doing this via a config.yaml is better than writing a custom proxy server because LiteLLM has a built-in Router Engine written in high-performance Python/C++ that monitors health, latency, and error rates much more accurately than a basic script could.
+
+1. The "Master" Configuration (config.yaml)
+Create a file named config.yaml on your PC. This configuration groups all your different models under one single name (best-claude).
+
+YAML
+model_list:
+  # --- PRIMARY MODEL (e.g., Remote Claude) ---
+  - model_name: best-claude
+    litellm_params:
+      model: anthropic/claude-3-5-sonnet-20241022
+      api_key: "your-anthropic-key"
+      rpm: 50 # Requests per minute limit
+      timeout: 10 # If it doesn't respond in 10s, it's "slow"
+
+  # --- FAST FALLBACK (e.g., Groq or a fast API) ---
+  - model_name: best-claude
+    litellm_params:
+      model: groq/llama-3.3-70b-versatile
+      api_key: "your-groq-key"
+      rpm: 100
+
+  # --- LOCAL RESCUE (e.g., Your Local Ollama) ---
+  - model_name: best-claude
+    litellm_params:
+      model: ollama/qwen2.5-coder:32b
+      api_base: "http://localhost:11434"
+
+router_settings:
+  # THIS IS THE MAGIC: It automatically picks the fastest responding model
+  routing_strategy: latency-based-routing 
+  
+  # Reliability Settings
+  num_retries: 2
+  allowed_fails: 1
+  cooldown_time: 30 # If a model fails, ignore it for 30 seconds
+  enable_pre_call_checks: true # Checks if model is "live" before sending
+2. The Start-up Code
+You don't need a complex script; you just need to launch the proxy using that config. Run this in your terminal:
+
+Bash
+# 1. Install the proxy
+pip install 'litellm[proxy]'
+
+# 2. Start the proxy server
+litellm --config config.yaml --port 4000
+3. Set it and Forget it (System Config)
+To ensure the Claude CLI always uses this automatic "Best Model" without you ever typing /model again, add these to your computer's environment variables (e.g., in .zshrc or .bashrc):
+
+Bash
+# Directs Claude CLI to your local "Smart Proxy"
+export ANTHROPIC_BASE_URL="http://localhost:4000"
+export ANTHROPIC_API_KEY="sk-locally-managed" # Doesn't matter what this is
+
+# Tells Claude to use the group name we defined in the YAML
+export ANTHROPIC_MODEL="best-claude"
+Why the YAML is better than a custom Proxy Server:
+Latency Tracking: LiteLLM keeps a moving average of how fast every model is. When you send a request, it doesn't just "guess"; it knows which model has been fastest for the last 10 requests.
+
+Zero-Downtime Retries: If your custom script tries a model and it fails, your Claude CLI session might crash. LiteLLM catches the error before it reaches Claude, retries with the next best model, and sends the successful result back. Claude never knows there was a problem.
+
+Circuit Breaking: If one of your models starts returning 500 errors (instability), LiteLLM "trips the circuit" and stops sending it traffic entirely for a few minutes to let it recover.
+
+Standardization: It converts the Claude CLI's Anthropic format into whatever the destination model needs (Ollama, OpenAI, Groq) automatically.
+
+Would you like me to help you set up the "Admin Dashboard" so you can watch these models switch in real-time on a web graph?
