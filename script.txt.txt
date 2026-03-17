@@ -1,0 +1,55 @@
+import requests
+import time
+
+# --- CONFIGURATION ---
+LITELLM_URL = "http://localhost:4000"  # Change to your LiteLLM address
+API_KEY = "sk-1234" # Your Master Key or Virtual Key
+
+def check_models():
+    headers = {"Authorization": f"Bearer {API_KEY}"}
+    
+    print(f"{'MODEL NAME':<30} | {'STATUS':<10} | {'LATENCY':<10}")
+    print("-" * 55)
+
+    try:
+        # 1. Get the list of all models configured in LiteLLM
+        model_info_resp = requests.get(f"{LITELLM_URL}/v1/model/info", headers=headers)
+        model_info_resp.raise_for_status()
+        models = model_info_resp.json().get("data", [])
+
+        for model in models:
+            model_name = model.get("model_name")
+            
+            # 2. Check individual health/speed
+            start_time = time.time()
+            try:
+                # We send a tiny 'ping' to check health
+                health_resp = requests.post(
+                    f"{LITELLM_URL}/chat/completions",
+                    headers=headers,
+                    json={
+                        "model": model_name,
+                        "messages": [{"role": "user", "content": "ping"}],
+                        "max_tokens": 1  # Keep it cheap and fast
+                    },
+                    timeout=10 # If no reply in 10s, it's 'Slow/Down'
+                )
+                
+                latency = round((time.time() - start_time) * 1000, 2)
+                
+                if health_resp.status_code == 200:
+                    status = "✅ ONLINE"
+                else:
+                    status = "❌ ERROR"
+            
+            except Exception:
+                status = "💀 DOWN"
+                latency = "N/A"
+
+            print(f"{model_name:<30} | {status:<10} | {latency}ms")
+
+    except Exception as e:
+        print(f"Failed to connect to LiteLLM: {e}")
+
+if __name__ == "__main__":
+    check_models()
